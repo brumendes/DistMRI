@@ -1,7 +1,7 @@
 import SimpleITK as sitk
 from matplotlib import colors
 import matplotlib.pyplot as plt
-from tools import CTBodyDetector, RandoHolesDetector
+from tools import CTBodyDetector, RandoHolesDetector, RandoHolesDetectorCV
 
 ct_folder_path = r"C:\Users\Mendes\Desktop\ProjectoDistorcaoMRI\CT_1_vazio"
 
@@ -34,15 +34,20 @@ img_slice_view = sitk.IntensityWindowing(img_slice, window_center - window_width
 body_detector = CTBodyDetector()
 body_detector.setTableHeight(table_height)
 body_cnt = body_detector.execute(img_slice)
+masked_image = body_detector.getBodyMask()
 
 # CT Holes Detector
 holes_detector = RandoHolesDetector()
-holes = holes_detector.execute(body_cnt)
+holes = holes_detector.execute(masked_image)
+
+# holes_detector = RandoHolesDetectorCV()
+# holes = holes_detector.execute(masked_image)
 
 ## visualize the results
 fig, ax = plt.subplots(1, 1)
 ax.imshow(sitk.GetArrayFromImage(img_slice_view), cmap='gray')
 ax.contour(sitk.GetArrayFromImage(body_cnt), colors='green')
 ax.contour(sitk.GetArrayFromImage(holes), colors='red')
+#ax.imshow(sitk.GetArrayFromImage(holes), cmap='gray')
 plt.tight_layout()
 plt.show()

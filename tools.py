@@ -1,4 +1,5 @@
 import SimpleITK as sitk
+import cv2
 
 
 class CTBodyDetector:
@@ -24,6 +25,7 @@ class CTBodyDetector:
         self.table_height = None
         self.table_thickness = 79
         self.table_cut = None
+        self.cnt = None
 
     def setTableHeight(self, table_height) -> None:
         self.table_height = table_height
@@ -53,16 +55,16 @@ class CTBodyDetector:
         ## Erosion and dilation
         image_comp = sitk.BinaryErode(sitk.BinaryDilate(img_slice_thresh, [3, 1]), [3, 1])
 
-        ## Fill the holes inside the components
+        ## Fill the holes inside
         filled = sitk.BinaryFillhole(image_comp)
 
         ## Compute the connected components
-        body_cnt = sitk.ConnectedComponent(filled, True)
+        self.cnt = sitk.ConnectedComponent(filled, True)
 
-        return body_cnt
+        return self.cnt
 
     def getBodyMask(self) -> sitk.Image:
-        return sitk.Mask(self.image, maskImage=self.components)
+        return sitk.Mask(self.image, maskImage=self.cnt)
 
 
 class RandoHolesDetector:
@@ -72,30 +74,52 @@ class RandoHolesDetector:
     def execute(self, image: sitk.Image) -> sitk.Image:
         self.image = image
 
+        inverted = sitk.InvertIntensity(self.image)
+
         ## Image threshold
-        thresh = sitk.MaximumEntropyThreshold(self.image)
+        #thresh = inverted > 800
+        thresh = sitk.OtsuMultipleThresholds(self.image, 3, valleyEmphasis=True, numberOfHistogramBins=256)
 
-        ## Morphological operations (Opening + Closing)
-        clean_thresh = sitk.BinaryOpeningByReconstruction(thresh, [1, 1, 1])
-        clean_thresh = sitk.BinaryClosingByReconstruction(clean_thresh, [1, 1, 1])
-
-        ## Compute the gradients (holes have a high gradient)
-        feature_img = sitk.GradientMagnitudeRecursiveGaussian(clean_thresh, sigma=0.8)
-
-        ## Level set segmentation based on shape - Needs a distance map
-        distance = sitk.IsoContourDistance(clean_thresh, levelSetValue=0, farValue=25)
-        shape_detector = sitk.ShapeDetectionLevelSet(distance, feature_img, curvatureScaling=5, numberOfIterations=2000)
-        shape_thresh = shape_detector>0
-
-        comp = sitk.ConnectedComponent(shape_thresh, True)
-
-        ## Fill the holes inside the components
-        filled = sitk.GrayscaleFillhole(comp)
+        comp = sitk.ConnectedComponent(thresh, True)
 
         filter = sitk.LabelShapeStatisticsImageFilter()
-        filter.Execute(filled)
+        filter.Execute(comp)
 
-        relabelMap =  {i : 0 for i in filter.GetLabels() if filter.GetRoundness(i) < 0.9}
+        relabelMap =  {i : 0 for i in filter.GetLabels() if filter.GetRoundness(i) < 0.86 if filter.GetElongation(i) > 0.9}
 
-        output = sitk.ChangeLabel(filled, changeMap=relabelMap)
+        output = sitk.ChangeLabel(comp, changeMap=relabelMap)
         return output
+
+class RandoHolesDetectorCV:
+    def __init__(self) -> None:
+        self.image = None
+        self.params = cv2.SimpleBlobDetector_Params()
+        self.params.filterByArea = True
+        self.params.minArea = 25
+        self.params.maxArea = 100
+        self.params.thresholdStep = 1
+        self.params.minThreshold = 10
+        self.params.maxThreshold = 100
+        self.params.filterByCircularity = True
+        self.params.minCircularity = 0.65
+        self.params.filterByInertia = True
+        self.params.minInertiaRatio = 0.65
+        self.params.filterByConvexity = True
+        self.params.minConvexity = 0.65
+        self.params.minDistBetweenBlobs = 8
+        self.params.minRepeatability = 1
+        ## Create a blob detector with the parameters
+        self.detector = cv2.SimpleBlobDetector_create(self.params)
+
+    def execute(self, image: sitk.Image) -> sitk.Image:
+        self.image = sitk.Cast(sitk.RescaleIntensity(image), sitk.sitkUInt8)
+        ## Detect blobs
+        keypoints = self.detector.detect(sitk.GetArrayFromImage(self.image))
+
+        ## Blank image to draw the keypoints
+        blank = sitk.Image([self.image.GetHeight(), self.image.GetWidth()], sitk.sitkUInt8, 1)
+
+        ## Draw keypoints on image and display z-index
+        im_with_keypoints = cv2.drawKeypoints(sitk.GetArrayFromImage(blank), keypoints, sitk.GetArrayFromImage(blank), (255, 0, 0), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
+        return sitk.GetImageFromArray(im_with_keypoints)
