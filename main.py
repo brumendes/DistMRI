@@ -3,7 +3,7 @@ from matplotlib import colors
 import matplotlib.pyplot as plt
 from tools import CTBodyDetector, RandoHolesDetector, RandoHolesDetectorCV
 
-ct_folder_path = r"C:\Users\Mendes\Desktop\ProjectoDistorcaoMRI\CT_1_vazio"
+ct_folder_path = r"C:\Users\Mendes\Desktop\18479762"
 
 ## Read folder with series
 ct_reader = sitk.ImageSeriesReader()
@@ -12,19 +12,19 @@ ct_reader.SetFileNames(ct_file_names)
 ct_reader.MetaDataDictionaryArrayUpdateOn()
 ct_volume = ct_reader.Execute()
 
-imgs_list_idx = [64, 39, 14, -11, -36, -61, -86, -111]
+imgs_list_idx = [120, 64, 39, 14, -11, -36, -61, -86, -111]
 
 slab_z_index = imgs_list_idx[0]
 
 ## Select image with z-index
 for i in range(0, ct_volume.GetSize()[2]):
-    if int(ct_reader.GetMetaData(i, '0020|1041')) == slab_z_index:
+    if int(float(ct_reader.GetMetaData(i, '0020|1041'))) == slab_z_index:
         img_idx = i
 
 ## Get info
 window_center = int(ct_reader.GetMetaData(img_idx, '0028|1050'))
 window_width = int(ct_reader.GetMetaData(img_idx, '0028|1051'))
-table_height = ct_reader.GetMetaData(img_idx, '0018|1130')
+table_height = int(float(ct_reader.GetMetaData(img_idx, '0018|1130').strip()))
 
 img_slice = ct_volume[:,:,img_idx]
 ## Intensity Window for viewing purposes
